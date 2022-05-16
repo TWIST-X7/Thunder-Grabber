@@ -2,6 +2,7 @@
 #https://github.com/TWIST-X7/Thunder-Grabber
 import requests
 import os
+import sys
 import json
 import base64
 import winreg
@@ -14,7 +15,6 @@ import sqlite3
 import platform
 import win32crypt
 import subprocess
-import sys
 import httpx
 
 from Cryptodome.Cipher import AES
