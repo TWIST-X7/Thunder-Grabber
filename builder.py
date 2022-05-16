@@ -4,8 +4,9 @@
 import requests
 import os
 import shutil
-from colorama import Fore
 import time
+
+from colorama import Fore
 from pystyle import Anime, Colorate, Colors, Center, System, Write
 from encryption import Base64_encode, AES_encrypt
 from os.path import exists
